@@ -4,11 +4,18 @@ members = ["incrstruct_derive"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+authors = ["Tommie Gannert"]
+repository = "https://github.com/tommie/incrstruct"
+license = "MIT"
 
 [package]
 name = "incrstruct"
+description = "Build self-referencing structs using two-phase initialization"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
 
 [dependencies]
 incrstruct_derive = { path = "incrstruct_derive" }
