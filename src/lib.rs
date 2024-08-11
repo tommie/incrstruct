@@ -14,7 +14,7 @@
 //! Alpha stage. You can probably shoot yourself in the foot with this
 //! crate.
 //!
-//! [ ] Implement generics so it's not hard-coded for a single lifetime.
+//! - [ ] Implement generics so it's not hard-coded for a single lifetime.
 //!
 //! # How To Define a Self-Referencing Struct
 //!
@@ -84,7 +84,7 @@
 //! }
 //! ```
 //!
-//! # Creating A Value
+//! # How To Create A Value
 //!
 //! Now that `AStruct` is defined, we can easily create a `Box` or
 //! `Rc` value:
