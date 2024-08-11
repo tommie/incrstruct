@@ -23,7 +23,7 @@
 //! do. In addition, you need to add a header field last:
 //!
 //! ```rust
-//! use incrstruct_derive::IncrStruct;
+//! use incrstruct::IncrStruct;
 //!
 //! #[derive(IncrStruct)]
 //! struct AStruct<'a> {
@@ -40,7 +40,7 @@
 //!
 //! ```rust
 //! use std::cell::{Ref, RefCell};
-//! # use incrstruct_derive::IncrStruct;
+//! # use incrstruct::IncrStruct;
 //! # #[derive(IncrStruct)]
 //! # struct AStruct<'a> {
 //!     #[borrows(a)]
@@ -68,7 +68,7 @@
 //!
 //! ```rust
 //! # use std::cell::{Ref, RefCell};
-//! # use incrstruct_derive::IncrStruct;
+//! # use incrstruct::IncrStruct;
 //! # #[derive(IncrStruct)]
 //! # struct AStruct<'a> {
 //! #     #[borrows(a)]
@@ -91,7 +91,7 @@
 //!
 //! ```rust
 //! # use std::cell::{Ref, RefCell};
-//! # use incrstruct_derive::IncrStruct;
+//! # use incrstruct::IncrStruct;
 //! # #[derive(IncrStruct)]
 //! # struct AStruct<'a> {
 //! #     #[borrows(a)]
@@ -120,7 +120,7 @@
 //! ```rust
 //! # use std::cell::{Ref, RefCell};
 //! # use std::rc::Rc;
-//! # use incrstruct_derive::IncrStruct;
+//! # use incrstruct::IncrStruct;
 //! # #[derive(IncrStruct)]
 //! # struct AStruct<'a> {
 //! #     #[borrows(a)]
@@ -154,7 +154,7 @@
 //!
 //! ```rust
 //! use std::cell::{Ref, RefCell};
-//! use incrstruct_derive::IncrStruct;
+//! use incrstruct::IncrStruct;
 //!
 //! #[derive(IncrStruct)]
 //! struct AStruct<'a> {
@@ -185,7 +185,7 @@
 //!     }
 //! }
 //!
-//! // Only head fields are provied to the generated `new_X` functions.
+//! // Only head fields are provided to the generated `new_X` functions.
 //! let my_a = AStruct::new_box(RefCell::new(42));
 //!
 //! assert_eq!(*my_a.a.borrow(), *my_a.b);
@@ -252,6 +252,8 @@ use core::marker::PhantomPinned;
 use core::mem::MaybeUninit;
 use core::ptr::drop_in_place;
 use std::rc::Rc;
+
+pub use incrstruct_derive::IncrStruct;
 
 #[derive(Clone, Debug)]
 pub enum Header {

@@ -1,3 +1,5 @@
+//! The macros used to generate self-referencing structs.
+
 use std::collections::HashSet;
 
 extern crate proc_macro;
@@ -6,9 +8,17 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
+/// Derives initialization functions for a struct. See the
+/// [crate documentation](../incrstruct).
 #[proc_macro_derive(IncrStruct, attributes(borrows, header))]
 pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
     let input = parse_macro_input!(tokens as DeriveInput);
+
+    match input.data {
+        syn::Data::Struct(_) => {}
+        _ => panic!("IncrStruct can only be used on structs"),
+    }
+
     let mut fields = get_named_fields(&input);
 
     let header = fields.pop();

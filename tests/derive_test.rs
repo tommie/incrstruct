@@ -1,7 +1,7 @@
 use core::cell::{Ref, RefCell};
 use core::ptr::drop_in_place;
 
-#[derive(incrstruct_derive::IncrStruct)]
+#[derive(incrstruct::IncrStruct)]
 pub struct AStruct<'a> {
     #[borrows(b)]
     pub c: &'a i32,
