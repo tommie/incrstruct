@@ -1,6 +1,14 @@
-[package]
-name = "incrstruct"
+[workspace]
+members = ["incrstruct_derive"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
 
+[package]
+name = "incrstruct"
+version.workspace = true
+edition.workspace = true
+
 [dependencies]
+incrstruct_derive = { version = "0.1.0", path = "incrstruct_derive" }
