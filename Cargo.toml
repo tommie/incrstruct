@@ -7,6 +7,7 @@ edition = "2021"
 authors = ["Tommie Gannert"]
 repository = "https://github.com/tommie/incrstruct"
 license = "MIT"
+readme = "README.md"
 
 [package]
 name = "incrstruct"
@@ -16,6 +17,7 @@ edition.workspace = true
 authors.workspace = true
 repository.workspace = true
 license.workspace = true
+readme.workspace = true
 
 [dependencies]
 incrstruct_derive = { path = "incrstruct_derive" }
