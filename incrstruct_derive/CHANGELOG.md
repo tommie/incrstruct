@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 7 commits contributed to the release.
+ - 9 commits contributed to the release.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Adds missing cargo description. ([`cc669c6`](https://github.com/tommie/incrstruct/commit/cc669c6918bc1f3a48d42aba727bfeac83b11f17))
+    - Release incrstruct_derive v0.1.0, incrstruct v0.1.0 ([`beac6bf`](https://github.com/tommie/incrstruct/commit/beac6bf64abcffa45235faa2ace08ccc499e5905))
     - Release incrstruct_derive v0.1.0, incrstruct v0.1.0 ([`e7af8ab`](https://github.com/tommie/incrstruct/commit/e7af8ab264aa669feb8e0963e6cf5a898d433138))
     - Adds CHANGELOG.md. ([`6188ed2`](https://github.com/tommie/incrstruct/commit/6188ed2e8b091b7b8badc53a64de5f92d66a621e))
     - Implements generics. ([`669f097`](https://github.com/tommie/incrstruct/commit/669f0977d6ada003d7aee14100f0e044adfb0042))
