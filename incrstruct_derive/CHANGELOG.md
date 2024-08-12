@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.1.1 (2024-08-12)
 
 ### Added
 
@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Updates changelog. ([`472b008`](https://github.com/tommie/incrstruct/commit/472b008ac8083e2d6226089ad05037bb11b6f40a))
     - Improves macro error messages using compile_error. ([`11bfb2a`](https://github.com/tommie/incrstruct/commit/11bfb2a68488c5f656440cef9e02ed900f094911))
 </details>
 
@@ -45,3 +46,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Re-exports the macro. ([`792b0b5`](https://github.com/tommie/incrstruct/commit/792b0b5f6be290811b3c81f5df84f84bd042c91f))
     - Implements the macro, adds examples and tests. ([`46fe4e8`](https://github.com/tommie/incrstruct/commit/46fe4e8b64771008ff9c314666678b453bb8c5d9))
 </details>
+
