@@ -20,4 +20,4 @@ license.workspace = true
 readme.workspace = true
 
 [dependencies]
-incrstruct_derive = { path = "incrstruct_derive" }
+incrstruct_derive = { version = "0.1.0", path = "incrstruct_derive" }
