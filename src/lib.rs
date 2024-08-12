@@ -14,6 +14,16 @@
 //! Alpha stage. You can probably shoot yourself in the foot with this
 //! crate.
 //!
+//! - Since a move in Rust doesn't trigger any code, any value move
+//!   will make the self-referencing struct invalid. E.g. if you use
+//!   these structs directly in a `Vec`, which later has to reallocate
+//!   to grow. As long as you use `Vec<Box<MyStruct>>`, like what the
+//!   high-level API provides with e.g. [new_box], it is safe.
+//!    - We could provide a special `Vec` (and other in-line containers)
+//!      that runs [force_init]. It could be eager or lazy, though the
+//!      lazy case would be complicated by borrowed slices. This would
+//!      clean up the heap usage (and cache utilization) further.
+//!
 //! # How To Define a Self-Referencing Struct
 //!
 //! Like Ouroboros, we divide struct fields into heads and tails. The
