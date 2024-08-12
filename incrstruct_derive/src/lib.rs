@@ -50,10 +50,14 @@ pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
     let mut drop_tail_names = tail_names.clone();
     drop_tail_names.reverse();
 
-    let init_field_decls = make_init_field_decls(
-        fields.as_slice(),
-        Some(syn::Lifetime::new("'a", proc_macro2::Span::call_site())).as_ref(),
-    );
+    let (generics_decls, generics_args, generics_where) = input.generics.split_for_impl();
+    let first_lifetime = input
+        .generics
+        .lifetimes()
+        .nth(0)
+        .map(|param| &param.lifetime);
+
+    let init_field_decls = make_init_field_decls(fields.as_slice(), first_lifetime);
     let init_field_names = make_init_field_names(tails.as_slice());
     let init_field_args = make_init_field_args(
         fields.as_slice(),
@@ -67,7 +71,7 @@ pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
     );
 
     quote! {
-        impl<'a> #struct_name<'a> {
+        impl #generics_decls #struct_name #generics_args #generics_where {
             pub fn new_box(#(#head_params),*) -> std::boxed::Box<Self> {
                 // SAFETY: the callee is aware the struct is partially initialized.
                 incrstruct::new_box(unsafe { Self::new_uninit(#(#head_args),*) })
@@ -102,13 +106,13 @@ pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
             }
         }
 
-        trait #init_trait_name<'a> {
+        trait #init_trait_name #generics_decls #generics_where {
             #(
                 #init_field_decls
             )*
         }
 
-        impl<'a> incrstruct::IncrStructInit for #struct_name<'a> {
+        impl #generics_decls incrstruct::IncrStructInit for #struct_name #generics_args #generics_where {
             unsafe fn init(this: *mut Self) {
                 let r = &mut *this;
 
@@ -118,7 +122,7 @@ pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
                 // that init_field_X is not unsafe.
 
                 #(
-                    core::ptr::write(&mut r.#tail_names as *mut _, <Self as #init_trait_name<'a>>::#init_field_names(#( #init_field_args ),*));
+                    core::ptr::write(&mut r.#tail_names as *mut _, <Self as #init_trait_name #generics_args>::#init_field_names(#( #init_field_args ),*));
                 )*
             }
 
@@ -131,7 +135,7 @@ pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
                 #( core::ptr::drop_in_place(&mut this.#drop_tail_names); )*
             }
 
-            fn header<'b>(this: &'b mut Self) -> &'b mut incrstruct::Header {
+            fn header<'isheader>(this: &'isheader mut Self) -> &'isheader mut incrstruct::Header {
                 &mut this.#header_name
             }
         }
@@ -281,7 +285,7 @@ fn get_borrows(field: &syn::Field) -> HashSet<String> {
 
 /// Returns the fields of the struct that can be initialized directly,
 /// in phase one. These are called heads in Ouroboros.
-fn find_phase<'a>(fields: &'a [&syn::Field], borrows: bool) -> Vec<&'a syn::Field> {
+fn find_phase<'b>(fields: &'b [&syn::Field], borrows: bool) -> Vec<&'b syn::Field> {
     fields
         .iter()
         .map(|field| *field)

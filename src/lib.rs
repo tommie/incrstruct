@@ -14,8 +14,6 @@
 //! Alpha stage. You can probably shoot yourself in the foot with this
 //! crate.
 //!
-//! - [ ] Implement generics so it's not hard-coded for a single lifetime.
-//!
 //! # How To Define a Self-Referencing Struct
 //!
 //! Like Ouroboros, we divide struct fields into heads and tails. The
@@ -56,6 +54,10 @@
 //! #    }
 //! # }
 //! ```
+//!
+//! You will likely always want a lifetime parameter, so you can refer
+//! back to it in tail fields. The first declared lifetime parameter
+//! is used for the `init_field_X` arguments.
 //!
 //! Unlike Ouroboros, you can only borrow from fields later in the
 //! struct (to enforce a sane drop order,) and only immutable
@@ -101,9 +103,9 @@
 //! #     hdr: incrstruct::Header,
 //! # }
 //! # impl<'a> AStructInit<'a> for AStruct<'a> {
-//! #    fn init_field_b(a: &'a RefCell<i32>) -> Ref<'a, i32> {
-//! #        a.borrow()
-//! #    }
+//! #     fn init_field_b(a: &'a RefCell<i32>) -> Ref<'a, i32> {
+//! #         a.borrow()
+//! #     }
 //! # }
 //! let my_box = AStruct::new_box(RefCell::new(42));
 //! let my_rc = AStruct::new_rc(RefCell::new(42));
@@ -130,9 +132,9 @@
 //! #     hdr: incrstruct::Header,
 //! # }
 //! # impl<'a> AStructInit<'a> for AStruct<'a> {
-//! #    fn init_field_b(a: &'a RefCell<i32>) -> Ref<'a, i32> {
-//! #        a.borrow()
-//! #    }
+//! #     fn init_field_b(a: &'a RefCell<i32>) -> Ref<'a, i32> {
+//! #         a.borrow()
+//! #     }
 //! # }
 //! let my_rc = AStruct::new_rc(RefCell::new(42));
 //! let mut taken_value = Rc::into_inner(my_rc).unwrap();
@@ -150,7 +152,7 @@
 //! or other wrappers that aren't supported directly. Take a look at
 //! the [new_box] function.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```rust
 //! use std::cell::{Ref, RefCell};
@@ -189,6 +191,39 @@
 //! let my_a = AStruct::new_box(RefCell::new(42));
 //!
 //! assert_eq!(*my_a.a.borrow(), *my_a.b);
+//! ```
+//!
+//! ## Generics And Lifetimes
+//!
+//! Generic parameters are forwarded to the generated Init trait.
+//!
+//! The struct's first declared lifetime is used to set the lifetime
+//! of the argument references in `init_field_X`.
+//!
+//! ```rust
+//! use std::cell::{Ref, RefCell};
+//! use std::fmt::Debug;
+//! use incrstruct::IncrStruct;
+//!
+//! #[derive(IncrStruct)]
+//! struct AStruct<'b, T> where T: Debug {
+//!     #[borrows(a)]
+//!     b: Ref<'b, T>,
+//!     a: RefCell<T>,
+//!
+//!     #[header]
+//!     hdr: incrstruct::Header,
+//! }
+//!
+//! impl<'b, T: Debug> AStructInit<'b, T> for AStruct<'b, T> {
+//!    fn init_field_b(a: &'b RefCell<T>) -> Ref<'b, T> {
+//!         a.borrow()
+//!    }
+//! }
+//!
+//! let my_box = AStruct::new_box(RefCell::new(42));
+//!
+//! assert_eq!(*my_box.a.borrow(), *my_box.b);
 //! ```
 //!
 //! # How It Works
