@@ -6,7 +6,8 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{parse_macro_input, DeriveInput, Error};
+use syn::spanned::Spanned;
 
 /// Derives initialization functions for a struct. See the
 /// [crate documentation](../incrstruct).
@@ -14,21 +15,38 @@ use syn::{parse_macro_input, DeriveInput};
 pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
     let input = parse_macro_input!(tokens as DeriveInput);
 
-    match input.data {
-        syn::Data::Struct(_) => {}
-        _ => panic!("IncrStruct can only be used on structs"),
+    match incr_struct(&input) {
+        Ok(output) => output,
+        Err(err) => err.into_compile_error().into(),
     }
+}
+
+fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
+    let data_struct = match &input.data {
+        syn::Data::Struct(data) => Ok(data),
+        syn::Data::Enum(data) => Err(data.enum_token.span()),
+        syn::Data::Union(data) => Err(data.union_token.span()),
+    }
+    .map_err(|span| Error::new(span, "IncrStruct can only be used on structs"))?;
 
     let mut fields = get_named_fields(&input);
 
-    let header = fields.pop();
-    if !header
-        .map(|field| has_attribute(&field.attrs, "header"))
-        .is_some_and(|found| found)
-    {
-        panic!("missing #[header] field");
-    }
-    let header_name = header.unwrap().ident.as_ref().unwrap();
+    let header = if let Some(header) = fields.pop() {
+        if !has_attribute(&header.attrs, "header") {
+            return Err(Error::new_spanned(
+                header,
+                "missing #[header] attribute on last field",
+            ));
+        }
+
+        header
+    } else {
+        return Err(Error::new_spanned(
+            &data_struct.fields,
+            "missing #[header] field",
+        ));
+    };
+    let header_name = header.ident.as_ref().unwrap();
 
     // We are mostly concerned with initialization, which means heads
     // before tails. We simply reverse the list (now that header is
@@ -57,12 +75,12 @@ pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
         .nth(0)
         .map(|param| &param.lifetime);
 
-    let init_field_decls = make_init_field_decls(fields.as_slice(), first_lifetime);
-    let init_field_names = make_init_field_names(tails.as_slice());
-    let init_field_args = make_init_field_args(
+    let (init_field_decls, init_field_args) = make_init_field_decls_and_args(
         fields.as_slice(),
+        first_lifetime,
         Some(&syn::Ident::new("r", proc_macro2::Span::call_site())),
-    );
+    )?;
+    let init_field_names = make_init_field_names(tails.as_slice());
 
     let struct_name = &input.ident;
     let init_trait_name = syn::Ident::new(
@@ -70,7 +88,7 @@ pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
         proc_macro2::Span::call_site(),
     );
 
-    quote! {
+    Ok(quote! {
         impl #generics_decls #struct_name #generics_args #generics_where {
             pub fn new_box(#(#head_params),*) -> std::boxed::Box<Self> {
                 // SAFETY: the callee is aware the struct is partially initialized.
@@ -140,7 +158,7 @@ pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
             }
         }
     }
-    .into()
+    .into())
 }
 
 /// Returns a list of function parameters, like how a function is declared.
@@ -179,6 +197,7 @@ fn make_field_args(
         })
         .collect()
 }
+
 fn make_init_field_names(fields: &[&syn::Field]) -> Vec<syn::Ident> {
     fields
         .iter()
@@ -193,68 +212,63 @@ fn make_init_field_names(fields: &[&syn::Field]) -> Vec<syn::Ident> {
         .collect()
 }
 
-fn make_init_field_args(
-    fields: &[&syn::Field],
-    src: Option<&syn::Ident>,
-) -> Vec<Vec<proc_macro2::TokenStream>> {
-    fields
-        .iter()
-        .enumerate()
-        .map(|(i, field)| {
-            if !has_attribute(&field.attrs, "borrows") {
-                return None;
-            }
-
-            let name = field.ident.as_ref().unwrap().to_string();
-            let borrows = get_borrows(field);
-            let param_fields = find_borrows_fields(&fields[..i], borrows)
-                .expect(format!("Field {} is referencing invalid fields", name.as_str()).as_str());
-
-            Some(make_field_args(param_fields.as_slice(), src))
-        })
-        .filter_map(|opt| opt)
-        .collect()
-}
-
-fn make_init_field_decls(
+fn make_init_field_decls_and_args(
     fields: &[&syn::Field],
     ref_lifetime: Option<&syn::Lifetime>,
-) -> Vec<proc_macro2::TokenStream> {
-    fields
-        .iter()
-        .enumerate()
-        .map(|(i, field)| {
-            if !has_attribute(&field.attrs, "borrows") {
-                return None;
+    src: Option<&syn::Ident>,
+) -> Result<
+    (
+        Vec<proc_macro2::TokenStream>,
+        Vec<Vec<proc_macro2::TokenStream>>,
+    ),
+    Error,
+> {
+    let mut decls = Vec::new();
+    let mut args = Vec::new();
+
+    for (i, field) in fields.iter().enumerate() {
+        if !has_attribute(&field.attrs, "borrows") {
+            continue;
+        }
+
+        let ty = &field.ty;
+        let name = field.ident.as_ref().unwrap().to_string();
+        let fn_name = syn::Ident::new(
+            &("init_field_".to_string() + name.as_str()),
+            proc_macro2::Span::call_site(),
+        );
+        let borrows = get_borrows(field)?;
+        let param_fields = find_borrows_fields(&fields[..i], borrows).map_err(|missing| {
+            let mut out: Option<Error> = None;
+
+            for dep in missing.into_iter() {
+                let err = Error::new_spanned(&dep, "borrowed field not found later in the struct");
+                if let Some(ref mut out) = out {
+                    out.combine(err);
+                } else {
+                    out = Some(err);
+                }
             }
 
-            let ty = &field.ty;
-            let name = field.ident.as_ref().unwrap().to_string();
-            let fn_name = syn::Ident::new(
-                &("init_field_".to_string() + name.as_str()),
-                proc_macro2::Span::call_site(),
-            );
-            let borrows = get_borrows(field);
-            let param_fields = find_borrows_fields(&fields[..i], borrows)
-                .expect(format!("Field {} is referencing invalid fields", name.as_str()).as_str());
-            let params = make_field_params(param_fields.as_slice(), ref_lifetime);
+            out.unwrap()
+        })?;
+        let params = make_field_params(param_fields.as_slice(), ref_lifetime);
 
-            Some(quote! { fn #fn_name(#( #params ),*) -> #ty; }.into())
-        })
-        .filter_map(|opt| opt)
-        .collect()
+        decls.push(quote! { fn #fn_name(#( #params ),*) -> #ty; }.into());
+        args.push(make_field_args(param_fields.as_slice(), src));
+    }
+
+    Ok((decls, args))
 }
 
 fn find_borrows_fields<'b>(
     fields: &'b [&syn::Field],
-    mut borrows: HashSet<String>,
-) -> Result<Vec<&'b syn::Field>, HashSet<String>> {
+    mut borrows: HashSet<syn::Ident>,
+) -> Result<Vec<&'b syn::Field>, HashSet<syn::Ident>> {
     let out = fields
         .iter()
         .map(|field| *field)
-        .filter(|field| {
-            field.ident.is_some() && borrows.remove(&field.ident.as_ref().unwrap().to_string())
-        })
+        .filter(|field| field.ident.is_some() && borrows.remove(field.ident.as_ref().unwrap()))
         .collect();
 
     if borrows.is_empty() {
@@ -264,22 +278,20 @@ fn find_borrows_fields<'b>(
     }
 }
 
-fn get_borrows(field: &syn::Field) -> HashSet<String> {
+fn get_borrows(field: &syn::Field) -> Result<HashSet<syn::Ident>, Error> {
     let attr = field
         .attrs
         .iter()
         .find(|attr| attr.path().is_ident("borrows"));
 
     if let Some(attr) = attr {
-        let args = attr
-            .parse_args_with(
-                syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated,
-            )
-            .unwrap();
+        let args = attr.parse_args_with(
+            syn::punctuated::Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated,
+        )?;
 
-        HashSet::from_iter(args.into_iter().map(|arg| arg.to_string()))
+        Ok(HashSet::from_iter(args.into_iter()))
     } else {
-        HashSet::new()
+        Ok(HashSet::new())
     }
 }
 
