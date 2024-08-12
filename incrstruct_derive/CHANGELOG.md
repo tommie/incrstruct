@@ -5,19 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.1.0 (2024-08-12)
+## Unreleased
 
 ### Added
 
- - Implemented the `IterStruct` derive macro and support library.
-
-### Commit Statistics
-
-<csr-read-only-do-not-edit/>
-
- - 9 commits contributed to the release.
- - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
- - 0 issues like '(#ID)' were seen in commit messages
+ - Improved macro error messages using compile_error!.
 
 ### Commit Details
 
@@ -26,6 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Improves macro error messages using compile_error. ([`11bfb2a`](https://github.com/tommie/incrstruct/commit/11bfb2a68488c5f656440cef9e02ed900f094911))
+</details>
+
+## 0.1.0 (2024-08-12)
+
+### Added
+
+ - Implemented the `IterStruct` derive macro and support library.
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - Release incrstruct_derive v0.1.0, incrstruct v0.1.0 ([`d8ace57`](https://github.com/tommie/incrstruct/commit/d8ace57ee992b1c21178c6a79823722c93aee3d6))
     - Adds missing cargo description. ([`cc669c6`](https://github.com/tommie/incrstruct/commit/cc669c6918bc1f3a48d42aba727bfeac83b11f17))
     - Release incrstruct_derive v0.1.0, incrstruct v0.1.0 ([`beac6bf`](https://github.com/tommie/incrstruct/commit/beac6bf64abcffa45235faa2ace08ccc499e5905))
     - Release incrstruct_derive v0.1.0, incrstruct v0.1.0 ([`e7af8ab`](https://github.com/tommie/incrstruct/commit/e7af8ab264aa669feb8e0963e6cf5a898d433138))
@@ -36,4 +45,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Re-exports the macro. ([`792b0b5`](https://github.com/tommie/incrstruct/commit/792b0b5f6be290811b3c81f5df84f84bd042c91f))
     - Implements the macro, adds examples and tests. ([`46fe4e8`](https://github.com/tommie/incrstruct/commit/46fe4e8b64771008ff9c314666678b453bb8c5d9))
 </details>
-
