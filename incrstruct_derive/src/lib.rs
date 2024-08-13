@@ -6,12 +6,13 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Error};
+use syn::parse::Parse;
 use syn::spanned::Spanned;
+use syn::{parse_macro_input, DeriveInput, Error};
 
 /// Derives initialization functions for a struct. See the
 /// [crate documentation](../incrstruct).
-#[proc_macro_derive(IncrStruct, attributes(borrows, header))]
+#[proc_macro_derive(IncrStruct, attributes(borrows, header, init_err))]
 pub fn derive_incr_struct(tokens: TokenStream) -> TokenStream {
     let input = parse_macro_input!(tokens as DeriveInput);
 
@@ -57,6 +58,7 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
 
     let heads = find_phase(fields.as_slice(), false);
     let tails = find_phase(fields.as_slice(), true);
+    let num_tails = tails.len();
 
     let head_params = make_field_params(heads.as_slice(), None);
     let head_args = make_field_args(heads.as_slice(), None);
@@ -75,12 +77,50 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
         .nth(0)
         .map(|param| &param.lifetime);
 
+    let init_err = find_attribute(&input.attrs, "init_err")
+        .map(|attr| attr.parse_args_with(syn::Type::parse))
+        .transpose()?;
+    let init_err_or_unit = init_err
+        .clone()
+        .unwrap_or(syn::Type::Verbatim(quote! { () }));
+    let ensure_init_type = match &init_err {
+        Some(err) => quote! { Result<&mut Self, #err> },
+        None => quote! { &mut Self },
+    };
+    let force_init_type = match &init_err {
+        Some(err) => quote! { Result<(), #err> },
+        None => quote! { () },
+    };
     let (init_field_decls, init_field_args) = make_init_field_decls_and_args(
         fields.as_slice(),
         first_lifetime,
         Some(&syn::Ident::new("r", proc_macro2::Span::call_site())),
+        init_err.as_ref(),
     )?;
     let init_field_names = make_init_field_names(tails.as_slice());
+
+    let init_unwrap = match &init_err {
+        Some(_) => quote! {},
+        None => quote! { .unwrap() },
+    };
+    let new_funcs: Vec<proc_macro2::TokenStream> = [
+        (quote! { new_box }, quote! { std::boxed::Box<Self> }),
+        (quote! { new_rc }, quote! { std::rc::Rc<Self> }),
+    ]
+    .map(|(name, ty)| {
+        let ret_type = match &init_err {
+            Some(err) => quote! { Result<#ty, #err> },
+            None => quote! { #ty },
+        };
+
+        quote! {
+            pub fn #name(#(#head_params),*) -> #ret_type {
+                // SAFETY: the callee is aware the struct is partially initialized.
+                incrstruct::#name(unsafe { Self::new_uninit(#(#head_args),*) }) #init_unwrap
+            }
+        }
+    })
+    .into();
 
     let struct_name = &input.ident;
     let init_trait_name = syn::Ident::new(
@@ -88,17 +128,36 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
         proc_macro2::Span::call_site(),
     );
 
+    let init_field_calls = match &init_err {
+        Some(_) => quote! {
+            let mut at = #num_tails;
+            #(
+                match <Self as #init_trait_name #generics_args>::#init_field_names(#( #init_field_args ),*) {
+                    Ok(v) => {
+                        core::ptr::write(&mut r.#tail_names as *mut _, v);
+                        at -= 1;
+                    }
+                    Err(err) => {
+                        // SAFETY: we are undoing what we have
+                        // done, and any field references will be
+                        // dropped.
+                        Self::drop_tail_in_place(&mut *this, at);
+                        return Err(err);
+                    }
+                };
+            )*
+            debug_assert_eq!(at, 0);
+        },
+        None => quote! {
+            #(
+                core::ptr::write(&mut r.#tail_names as *mut _, <Self as #init_trait_name #generics_args>::#init_field_names(#( #init_field_args ),*));
+            )*
+        },
+    };
+
     Ok(quote! {
         impl #generics_decls #struct_name #generics_args #generics_where {
-            pub fn new_box(#(#head_params),*) -> std::boxed::Box<Self> {
-                // SAFETY: the callee is aware the struct is partially initialized.
-                incrstruct::new_box(unsafe { Self::new_uninit(#(#head_args),*) })
-            }
-
-            pub fn new_rc(#(#head_params),*) -> std::rc::Rc<Self> {
-                // SAFETY: the callee is aware the struct is partially initialized.
-                incrstruct::new_rc(unsafe { Self::new_uninit(#(#head_args),*) })
-            }
+            #(#new_funcs)*
 
             /// See `iterstruct::new_uninit`.
             pub unsafe fn new_uninit(#(#head_params),*) -> core::mem::MaybeUninit<Self> {
@@ -122,6 +181,14 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
                     };
                 });
             }
+
+            fn ensure_init(this: &mut core::mem::MaybeUninit<Self>) -> #ensure_init_type {
+                incrstruct::ensure_init(this) #init_unwrap
+            }
+
+            fn force_init(this: &mut Self) -> #force_init_type {
+                incrstruct::force_init(this) #init_unwrap
+            }
         }
 
         trait #init_trait_name #generics_decls #generics_where {
@@ -131,26 +198,28 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
         }
 
         impl #generics_decls incrstruct::IncrStructInit for #struct_name #generics_args #generics_where {
-            unsafe fn init(this: *mut Self) {
+            type Error = #init_err_or_unit;
+
+            // SAFETY: since we only support referencing earlier
+            // fields, in a DAG, this always writes to
+            // uninitialized space. The generated trait guarantees
+            // that init_field_X is not unsafe.
+            unsafe fn init(this: *mut Self) -> std::result::Result<(), Self::Error> {
                 let r = &mut *this;
 
-                // SAFETY: since we only support referencing earlier
-                // fields, in a DAG, this always writes to
-                // uninitialized space. The generated trait guarantees
-                // that init_field_X is not unsafe.
+                #init_field_calls
 
-                #(
-                    core::ptr::write(&mut r.#tail_names as *mut _, <Self as #init_trait_name #generics_args>::#init_field_names(#( #init_field_args ),*));
-                )*
+                Ok(())
             }
 
-            /// Drops all tail fields, returning a partially initialized struct.
+            /// Drops tail fields starting at `at`, in natural drop
+            /// order, causing a partially initialized struct.
             ///
             /// # Safety
             ///
             /// We only drop tail fields, and only once.
-            unsafe fn drop_tail_in_place(this: &mut Self) {
-                #( core::ptr::drop_in_place(&mut this.#drop_tail_names); )*
+            unsafe fn drop_tail_in_place(this: &mut Self, mut at: usize) {
+                #( if at == 0 { core::ptr::drop_in_place(&mut this.#drop_tail_names); } else { at -= 1; } )*
             }
 
             fn header<'isheader>(this: &'isheader mut Self) -> &'isheader mut incrstruct::Header {
@@ -216,6 +285,7 @@ fn make_init_field_decls_and_args(
     fields: &[&syn::Field],
     ref_lifetime: Option<&syn::Lifetime>,
     src: Option<&syn::Ident>,
+    init_err: Option<&syn::Type>,
 ) -> Result<
     (
         Vec<proc_macro2::TokenStream>,
@@ -231,7 +301,13 @@ fn make_init_field_decls_and_args(
             continue;
         }
 
-        let ty = &field.ty;
+        let ty = match &init_err {
+            Some(err) => {
+                let ty = &field.ty;
+                syn::Type::Verbatim(quote! { std::result::Result<#ty, #err> })
+            }
+            None => field.ty.clone(),
+        };
         let name = field.ident.as_ref().unwrap().to_string();
         let fn_name = syn::Ident::new(
             &("init_field_".to_string() + name.as_str()),
@@ -318,4 +394,11 @@ fn get_named_fields(input: &DeriveInput) -> Vec<&syn::Field> {
 
 fn has_attribute(attrs: &[syn::Attribute], name: &str) -> bool {
     attrs.iter().any(|attr| attr.path().is_ident(name))
+}
+
+fn find_attribute<'attr>(
+    attrs: &'attr [syn::Attribute],
+    name: &str,
+) -> Option<&'attr syn::Attribute> {
+    attrs.iter().find(|attr| attr.path().is_ident(name))
 }

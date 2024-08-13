@@ -67,7 +67,7 @@
 //!
 //! You will likely always want a lifetime parameter, so you can refer
 //! back to it in tail fields. The first declared lifetime parameter
-//! is used for the `init_field_X` arguments.
+//! is used for the `init_field_myfield` arguments.
 //!
 //! Unlike Ouroboros, you can only borrow from fields later in the
 //! struct (to enforce a sane drop order,) and only immutable
@@ -162,6 +162,27 @@
 //! or other wrappers that aren't supported directly. Take a look at
 //! the [new_box] function.
 //!
+//! # Handling Failures
+//!
+//! Using the `#[init_err(AnError)]` attribute on the struct, the
+//! `init_field_myfield` functions are expected to return a `Result<T,
+//! AnError>` instead of the plain value. If any tail field
+//! initialization fails, the previously initialized tail fields are
+//! dropped before `ensure_init` returns. This also causes relevant
+//! generated functions on your struct to return a corresponding
+//! `Result`:
+//!
+//! - `new_box -> Result<Box<AStruct>, AnError>`
+//! - `new_rc -> Result<Rc<AStruct>, AnError>`
+//! - `ensure_init -> Result<&mut AStruct, AnError>`
+//! - `force_init -> Result<(), AnError>`
+//!
+//! Note that Rust is generally not panic-tolerant, and no attempts to
+//! drop are made if a field initialization function panics.
+//!
+//! If you are using the unsafe `new_uninit`, and `ensure_init` fails,
+//! remember to run `drop_uninit_in_place` to stop memory leaks.
+//!
 //! # Examples
 //!
 //! ```rust
@@ -208,7 +229,7 @@
 //! Generic parameters are forwarded to the generated Init trait.
 //!
 //! The struct's first declared lifetime is used to set the lifetime
-//! of the argument references in `init_field_X`.
+//! of the argument references in `init_field_myfield`.
 //!
 //! ```rust
 //! use std::cell::{Ref, RefCell};
@@ -236,6 +257,41 @@
 //! assert_eq!(*my_box.a.borrow(), *my_box.b);
 //! ```
 //!
+//! ## Handling Failures
+//!
+//! ```rust
+//! use std::cell::{Ref, RefCell};
+//! use incrstruct::IncrStruct;
+//!
+//! #[derive(Debug, Eq, PartialEq)]
+//! enum AnError {
+//!   Failed,
+//! }
+//!
+//! #[derive(Debug, IncrStruct)]
+//! #[init_err(AnError)]
+//! struct AStruct<'a> {
+//!     #[borrows(a)]
+//!     b: Ref<'a, i32>,
+//!
+//!     a: RefCell<i32>,
+//!
+//!     #[header]
+//!     hdr: incrstruct::Header,
+//! }
+//!
+//! // All functions must return a `Result<_, AnError>`.
+//! impl<'a> AStructInit<'a> for AStruct<'a> {
+//!     fn init_field_b(a: &'a RefCell<i32>) -> Result<Ref<'a, i32>, AnError> {
+//!         Err(AnError::Failed)
+//!     }
+//! }
+//!
+//! let result = AStruct::new_box(RefCell::new(42));
+//!
+//! assert_eq!(result.unwrap_err(), AnError::Failed);
+//! ```
+//!
 //! # How It Works
 //!
 //! The `IncrStruct` derive macro creates a two-phase initialization
@@ -248,8 +304,14 @@
 //! prefer to reference `AStruct` as `MaybeUninit<AStruct>`, just to
 //! make it obvious that you shouldn't use it yet.
 //!
-//! Aside from that, it simply calls the `init_field_X` functions in
-//! order.
+//! Aside from that, it simply calls the `init_field_myfield`
+//! functions in order.
+//!
+//! To support initialization functions that can fail, the generated
+//! `init` function keeps track of which field it is initializing, and
+//! calls the generated `drop_tail_in_place` for the previous
+//! ones. There is no concept of partially initialized tail fields;
+//! it's all or nothing.
 //!
 //! A generated associated function called
 //! `AStruct::drop_uninit_in_place` must be used to drop the
@@ -277,21 +339,21 @@
 //!
 //! And here is a wish list:
 //!
-//! * Don't `Box` individual field values. Use a derive macro, not
-//!   rewriting what the user has defined. WYSIWYG.
-//! * Moving an initialized struct is impossible. Moving partially
-//!   initialized structs works.
-//! * Initialization can fail, and `Results` are handled properly
-//!   to drop already initialized fields.
-//! * Since `&mut` is exclusive, it would be ideal if self-referential
-//!   structs could only grab immutable references. (Since a single
-//!   `&mut self` would imply that nothing else in the program can
-//!   grab a reference. If, additionally, external users of the struct
-//!   were unable to acquire a `&mut`, there would be no changes to
-//!   Rust borrow semantics.
-//! * Generics shouldn't be a problem.
-//! * Enforce sound ordering of fields so that the natural drop order
-//!   makes sense w.r.t. dependencies.
+//! * [x] Don't `Box` individual field values. Use a derive macro, not
+//!       rewriting what the user has defined. WYSIWYG.
+//! * [x] Initialization can fail, and `Results` are handled properly
+//!       to drop already initialized fields.
+//! * [x] Generics shouldn't be a problem.
+//! * [x] Enforce sound ordering of fields so that the natural drop order
+//!       makes sense w.r.t. dependencies.
+//! * [ ] Since `&mut` is exclusive, it would be ideal if self-referential
+//!       structs could only grab immutable references. (Since a single
+//!       `&mut self` would imply that nothing else in the program can
+//!       grab a reference. If, additionally, external users of the struct
+//!       were unable to acquire a `&mut`, there would be no changes to
+//!       Rust borrow semantics.
+//! * [ ] Moving an initialized struct is impossible. Moving partially
+//!       initialized structs works.
 
 use core::marker::PhantomPinned;
 use core::mem::MaybeUninit;
@@ -312,15 +374,18 @@ pub enum Header {
 ///
 /// Used by auto-generated code. This is not an external API.
 pub trait IncrStructInit: Sized {
+    type Error;
+
     /// Initializes all leaf fields, in dependency order. All head
     /// fields have already been initialized, and all tail fields are
     /// uninitialized. When this function returns, all tail fields of
     /// the struct must have been initialized.
-    unsafe fn init(this: *mut Self);
+    unsafe fn init(this: *mut Self) -> Result<(), Self::Error>;
 
-    /// Drops all tail fields. It is only called when `this` is fully
-    /// initialized.
-    unsafe fn drop_tail_in_place(this: &mut Self);
+    /// Drops all tail fields starting at `at`, going in normal drop
+    /// order. A zero drops all tail fields. It is only called when
+    /// the referenced tail fields have been initialized.
+    unsafe fn drop_tail_in_place(this: &mut Self, at: usize);
 
     /// Returns a reference to the incrstruct header. This field
     /// should be last, so it's dropped last.
@@ -332,15 +397,15 @@ pub trait IncrStructInit: Sized {
 /// `T::new_uninit`.
 ///
 /// Used by auto-generated code.
-pub fn new_box<T: IncrStructInit>(v: MaybeUninit<T>) -> Box<T> {
+pub fn new_box<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Box<T>, T::Error> {
     let bx = Box::new(v);
     let raw = Box::into_raw(bx);
 
     // SAFETY: we have taken ownership of the pointer to uninitialized Box data.
-    let ptr = ensure_init(unsafe { &mut *raw });
+    let ptr = ensure_init(unsafe { &mut *raw })?;
 
     // SAFETY: the data is fully initialized, and Box can take ownership.
-    unsafe { Box::from_raw(ptr as *mut _) }
+    Ok(unsafe { Box::from_raw(ptr as *mut _) })
 }
 
 /// Creates a `Rc` from the given, partial struct. The function
@@ -348,16 +413,16 @@ pub fn new_box<T: IncrStructInit>(v: MaybeUninit<T>) -> Box<T> {
 /// `T::new_uninit`.
 ///
 /// Used by auto-generated code.
-pub fn new_rc<T: IncrStructInit>(v: MaybeUninit<T>) -> Rc<T> {
+pub fn new_rc<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Rc<T>, T::Error> {
     let rc = Rc::new(v);
     let raw = Rc::into_raw(rc);
 
     // SAFETY: we have taken ownership of the pointer to
     // uninitialized Rc data. We are the only writers.
-    let ptr = ensure_init(unsafe { &mut *(raw as *mut _) }) as *mut _;
+    let ptr = ensure_init(unsafe { &mut *(raw as *mut _) })? as *mut _;
 
     // SAFETY: the data is fully initialized, and Rc can take ownership.
-    unsafe { Rc::from_raw(ptr) }
+    Ok(unsafe { Rc::from_raw(ptr) })
 }
 
 /// Creates a partially initialized struct. The `f` function
@@ -387,18 +452,23 @@ pub unsafe fn new_uninit<T: IncrStructInit, F: FnOnce(&mut T)>(f: F) -> MaybeUni
 /// is guaranteed to be the same as `this`, and is only returned as a
 /// type-safety convenience.
 ///
+/// If an error occurs, all tail fields are dropped before the
+/// function returns. Thus, it's safe to call `ensure_init` again. The
+/// caller is responsible for calling `drop_uninit_in_place` if
+/// required.
+///
 /// Used by auto-generated code.
-pub fn ensure_init<T: IncrStructInit>(this: &mut MaybeUninit<T>) -> &mut T {
+pub fn ensure_init<T: IncrStructInit>(this: &mut MaybeUninit<T>) -> Result<&mut T, T::Error> {
     // SAFETY: we have exclusive access to `this`.
     let r = unsafe { &mut *this.as_mut_ptr() };
 
     match <T as IncrStructInit>::header(r) {
         Header::Inited(_) => {}
-        _ => force_init(r),
+        _ => force_init(r)?,
     };
 
     // SAFETY: all fields have been initialized.
-    unsafe { this.assume_init_mut() }
+    Ok(unsafe { this.assume_init_mut() })
 }
 
 /// Drops a partially initialized struct. Tail fields are assumed to
@@ -426,13 +496,13 @@ pub fn drop_uninit_in_place<T: IncrStructInit, F: FnOnce(&mut T)>(mut this: Mayb
 ///
 /// This is useful when a T has moved, and the self-referencing tail
 /// fields must be synchronized.
-pub fn force_init<T: IncrStructInit>(this: &mut T) {
+pub fn force_init<T: IncrStructInit>(this: &mut T) -> Result<(), T::Error> {
     match <T as IncrStructInit>::header(this) {
         Header::Uninited => {}
         // SAFETY: we are now making `this` back into a partially
         // initialized struct, the same as Uninited.
         Header::Inited(_) => unsafe {
-            T::drop_tail_in_place(this);
+            T::drop_tail_in_place(this, 0);
         },
         Header::Initing => panic!("Recursive call to force_init"),
     };
@@ -450,7 +520,9 @@ pub fn force_init<T: IncrStructInit>(this: &mut T) {
     // SAFETY: the code above has made the struct partially
     // initialized.
 
-    unsafe { T::init(this) };
+    unsafe { T::init(this)? };
 
     *<T as IncrStructInit>::header(this) = Header::Inited(PhantomPinned);
+
+    Ok(())
 }
