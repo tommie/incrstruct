@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+ * Fixes head fields memory leak on initialization error in `new_box` and `new_rc`.
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - Fixes head fields memory leak on initialization error in new_box and new_rc. ([`ece3afa`](https://github.com/tommie/incrstruct/commit/ece3afa0c2660183443532c111a5f89cd55800c7))
+</details>
+
 ## 0.1.1 (2024-08-13)
 
 ### Added
@@ -41,4 +57,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Implements the macro, adds examples and tests. ([`46fe4e8`](https://github.com/tommie/incrstruct/commit/46fe4e8b64771008ff9c314666678b453bb8c5d9))
     - Initial test. ([`777daf3`](https://github.com/tommie/incrstruct/commit/777daf3de5fe75d744533ba3304960018657df14))
 </details>
-

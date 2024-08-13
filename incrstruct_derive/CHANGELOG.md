@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+ * Fixes head fields memory leak on initialization error in `new_box` and `new_rc`.
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - Fixes head fields memory leak on initialization error in new_box and new_rc. ([`ece3afa`](https://github.com/tommie/incrstruct/commit/ece3afa0c2660183443532c111a5f89cd55800c7))
+</details>
+
 ## 0.1.2 (2024-08-13)
 
 ### Added
@@ -18,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release incrstruct_derive v0.1.2, incrstruct v0.1.1 ([`4d3d384`](https://github.com/tommie/incrstruct/commit/4d3d3844d627fe381558adfe47381bb34520c6db))
     - Updates changelogs. ([`d8caef9`](https://github.com/tommie/incrstruct/commit/d8caef9632e1905c5948d14e6cc1979f0f21425c))
     - Adds support for #[init_err(E)] and failable tail field initialization. ([`2023c23`](https://github.com/tommie/incrstruct/commit/2023c23c320f8bd70860740606a16d09ed4d2295))
 </details>
@@ -64,4 +81,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Re-exports the macro. ([`792b0b5`](https://github.com/tommie/incrstruct/commit/792b0b5f6be290811b3c81f5df84f84bd042c91f))
     - Implements the macro, adds examples and tests. ([`46fe4e8`](https://github.com/tommie/incrstruct/commit/46fe4e8b64771008ff9c314666678b453bb8c5d9))
 </details>
-
