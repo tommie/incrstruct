@@ -181,7 +181,7 @@
 //! drop are made if a field initialization function panics.
 //!
 //! If you are using the unsafe `new_uninit`, and `ensure_init` fails,
-//! remember to run `drop_uninit_in_place` to stop memory leaks.
+//! remember to run `drop_uninit` to stop memory leaks.
 //!
 //! # Examples
 //!
@@ -313,11 +313,11 @@
 //! ones. There is no concept of partially initialized tail fields;
 //! it's all or nothing.
 //!
-//! A generated associated function called
-//! `AStruct::drop_uninit_in_place` must be used to drop the
-//! `MaybeUninit<AStruct>` if the second phase never runs. It will
-//! panic if called on a fully initialized struct (but then you
-//! shouldn't have a `MaybeUninit<AStruct>` reference to it anyway.)
+//! A generated associated function called `AStruct::drop_uninit` must
+//! be used to drop the `MaybeUninit<AStruct>` if the second phase
+//! never runs. It will panic if called on a fully initialized struct
+//! (but then you shouldn't have a `MaybeUninit<AStruct>` reference to
+//! it anyway.)
 //!
 //! # Design Considerations
 //!
@@ -382,6 +382,10 @@ pub trait IncrStructInit: Sized {
     /// the struct must have been initialized.
     unsafe fn init(this: *mut Self) -> Result<(), Self::Error>;
 
+    /// Drops all head fields, going in normal drop order. It is only
+    /// called when all head fields are initialized.
+    unsafe fn drop_uninit_in_place(this: &mut MaybeUninit<Self>);
+
     /// Drops all tail fields starting at `at`, going in normal drop
     /// order. A zero drops all tail fields. It is only called when
     /// the referenced tail fields have been initialized.
@@ -402,10 +406,20 @@ pub fn new_box<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Box<T>, T::Error>
     let raw = Box::into_raw(bx);
 
     // SAFETY: we have taken ownership of the pointer to uninitialized Box data.
-    let ptr = ensure_init(unsafe { &mut *raw })?;
-
-    // SAFETY: the data is fully initialized, and Box can take ownership.
-    Ok(unsafe { Box::from_raw(ptr as *mut _) })
+    match ensure_init(unsafe { &mut *raw }) {
+        Ok(ptr) => {
+            // SAFETY: the data is fully initialized, and Box can take ownership.
+            Ok(unsafe { Box::from_raw(ptr as *mut _) })
+        }
+        Err(err) => {
+            // SAFETY: only head data is initialized.
+            unsafe {
+                T::drop_uninit_in_place(&mut *raw);
+                _ = Box::from_raw(raw);
+            }
+            Err(err)
+        }
+    }
 }
 
 /// Creates a `Rc` from the given, partial struct. The function
@@ -415,14 +429,23 @@ pub fn new_box<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Box<T>, T::Error>
 /// Used by auto-generated code.
 pub fn new_rc<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Rc<T>, T::Error> {
     let rc = Rc::new(v);
-    let raw = Rc::into_raw(rc);
+    let raw = Rc::into_raw(rc) as *mut _;
 
-    // SAFETY: we have taken ownership of the pointer to
-    // uninitialized Rc data. We are the only writers.
-    let ptr = ensure_init(unsafe { &mut *(raw as *mut _) })? as *mut _;
-
-    // SAFETY: the data is fully initialized, and Rc can take ownership.
-    Ok(unsafe { Rc::from_raw(ptr) })
+    // SAFETY: we have taken ownership of the pointer to uninitialized Box data.
+    match ensure_init(unsafe { &mut *raw }) {
+        Ok(ptr) => {
+            // SAFETY: the data is fully initialized, and Box can take ownership.
+            Ok(unsafe { Rc::from_raw(ptr as *mut _) })
+        }
+        Err(err) => {
+            // SAFETY: only head data is initialized.
+            unsafe {
+                T::drop_uninit_in_place(&mut *raw);
+                _ = Rc::from_raw(raw);
+            }
+            Err(err)
+        }
+    }
 }
 
 /// Creates a partially initialized struct. The `f` function
@@ -433,9 +456,9 @@ pub fn new_rc<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Rc<T>, T::Error> {
 /// # Safety
 ///
 /// Calling this function yields a value that will not call
-/// destructors. Callers must use `drop_uninit_in_place` until a
-/// successful call to `ensure_init`. After `ensure_init`, the caller
-/// owns the `*mut Self`, and normal drop rules apply.
+/// destructors. Callers must use `drop_uninit` until a successful
+/// call to `ensure_init`. After `ensure_init`, the caller owns the
+/// `*mut Self`, and normal drop rules apply.
 pub unsafe fn new_uninit<T: IncrStructInit, F: FnOnce(&mut T)>(f: F) -> MaybeUninit<T> {
     let mut out = MaybeUninit::<T>::uninit();
 
@@ -454,8 +477,7 @@ pub unsafe fn new_uninit<T: IncrStructInit, F: FnOnce(&mut T)>(f: F) -> MaybeUni
 ///
 /// If an error occurs, all tail fields are dropped before the
 /// function returns. Thus, it's safe to call `ensure_init` again. The
-/// caller is responsible for calling `drop_uninit_in_place` if
-/// required.
+/// caller is responsible for calling `drop_uninit` if required.
 ///
 /// Used by auto-generated code.
 pub fn ensure_init<T: IncrStructInit>(this: &mut MaybeUninit<T>) -> Result<&mut T, T::Error> {
@@ -476,16 +498,17 @@ pub fn ensure_init<T: IncrStructInit>(this: &mut MaybeUninit<T>) -> Result<&mut 
 /// initialized.
 ///
 /// Used by auto-generated code.
-pub fn drop_uninit_in_place<T: IncrStructInit, F: FnOnce(&mut T)>(mut this: MaybeUninit<T>, f: F) {
-    // SAFETY: `this` was moved into here.
-    let r = unsafe { &mut *this.as_mut_ptr() };
+pub unsafe fn drop_uninit_in_place<T: IncrStructInit, F: FnOnce(&mut T)>(
+    this: &mut MaybeUninit<T>,
+    f: F,
+) {
+    let r = &mut *this.as_mut_ptr();
 
     match <T as IncrStructInit>::header(r) {
         Header::Uninited => {
             f(r);
 
-            // SAFETY: we only drop head fields, and only once.
-            unsafe { drop_in_place(<T as IncrStructInit>::header(r)) };
+            drop_in_place(<T as IncrStructInit>::header(r));
         }
         Header::Inited(_) => panic!("drop_uninit_in_place on initialized value"),
         Header::Initing => panic!("drop_uninit_in_place during initialization"),
@@ -520,9 +543,16 @@ pub fn force_init<T: IncrStructInit>(this: &mut T) -> Result<(), T::Error> {
     // SAFETY: the code above has made the struct partially
     // initialized.
 
-    unsafe { T::init(this)? };
+    match unsafe { T::init(this) } {
+        Ok(_) => {
+            *<T as IncrStructInit>::header(this) = Header::Inited(PhantomPinned);
 
-    *<T as IncrStructInit>::header(this) = Header::Inited(PhantomPinned);
+            Ok(())
+        }
+        Err(err) => {
+            *<T as IncrStructInit>::header(this) = Header::Uninited;
 
-    Ok(())
+            Err(err)
+        }
+    }
 }

@@ -159,7 +159,7 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
         impl #generics_decls #struct_name #generics_args #generics_where {
             #(#new_funcs)*
 
-            /// See `iterstruct::new_uninit`.
+            /// See [incrstruct::new_uninit].
             pub unsafe fn new_uninit(#(#head_params),*) -> core::mem::MaybeUninit<Self> {
                 // SAFETY: we only write each field once, so this
                 // overwrites uninitialized values.
@@ -170,16 +170,9 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
                 })
             }
 
-            /// Drops a value previously created with `new_uninit`.
-            fn drop_uninit_in_place(this: core::mem::MaybeUninit<Self>) {
-                incrstruct::drop_uninit_in_place(this, |this| {
-                    // SAFETY: we only drop head fields, and only once.
-                    unsafe {
-                        #(
-                            core::ptr::drop_in_place(&mut this.#drop_head_names);
-                        )*
-                    };
-                });
+            /// See [incrstruct::drop_uninit_in_place].
+            unsafe fn drop_uninit(mut this: core::mem::MaybeUninit<Self>) {
+                <Self as incrstruct::IncrStructInit>::drop_uninit_in_place(&mut this)
             }
 
             fn ensure_init(this: &mut core::mem::MaybeUninit<Self>) -> #ensure_init_type {
@@ -210,6 +203,16 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
                 #init_field_calls
 
                 Ok(())
+            }
+
+            /// Drops a value previously created with `new_uninit`.
+            unsafe fn drop_uninit_in_place(this: &mut core::mem::MaybeUninit<Self>) {
+                // SAFETY: we only drop head fields, and only once.
+                incrstruct::drop_uninit_in_place(this, |this| unsafe {
+                    #(
+                        core::ptr::drop_in_place(&mut this.#drop_head_names);
+                    )*
+                });
             }
 
             /// Drops tail fields starting at `at`, in natural drop

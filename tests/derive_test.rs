@@ -48,7 +48,7 @@ mod simple {
 
         assert_eq!(*(unsafe { &*a.as_ptr() }).head1.borrow(), 42);
 
-        AStruct::drop_uninit_in_place(a);
+        unsafe { AStruct::drop_uninit(a) };
     }
 
     #[test]
@@ -141,7 +141,7 @@ mod init_err {
 
         assert_eq!(*(unsafe { &*a.as_ptr() }).head1.borrow(), 42);
 
-        AStruct::drop_uninit_in_place(a);
+        unsafe { AStruct::drop_uninit(a) };
     }
 
     #[test]
