@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+ - Adds support for `#[init_err(E)]` and failable tail field initialization.
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - Adds support for #[init_err(E)] and failable tail field initialization. ([`2023c23`](https://github.com/tommie/incrstruct/commit/2023c23c320f8bd70860740606a16d09ed4d2295))
+</details>
+
 ## 0.1.1 (2024-08-12)
 
 ### Added
@@ -18,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release incrstruct_derive v0.1.1 ([`490a322`](https://github.com/tommie/incrstruct/commit/490a32273e51a58a377f5931e2ab837f3437c038))
     - Updates changelog. ([`472b008`](https://github.com/tommie/incrstruct/commit/472b008ac8083e2d6226089ad05037bb11b6f40a))
     - Improves macro error messages using compile_error. ([`11bfb2a`](https://github.com/tommie/incrstruct/commit/11bfb2a68488c5f656440cef9e02ed900f094911))
 </details>
@@ -46,4 +63,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Re-exports the macro. ([`792b0b5`](https://github.com/tommie/incrstruct/commit/792b0b5f6be290811b3c81f5df84f84bd042c91f))
     - Implements the macro, adds examples and tests. ([`46fe4e8`](https://github.com/tommie/incrstruct/commit/46fe4e8b64771008ff9c314666678b453bb8c5d9))
 </details>
-

@@ -5,19 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+ - Adds support for `#[init_err(E)]` and failable tail field initialization.
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - Adds support for #[init_err(E)] and failable tail field initialization. ([`2023c23`](https://github.com/tommie/incrstruct/commit/2023c23c320f8bd70860740606a16d09ed4d2295))
+    - Adds a note about Vec. ([`faed96f`](https://github.com/tommie/incrstruct/commit/faed96f52feccafe9f241fac212abf7a0ff35573))
+</details>
+
 ## 0.1.0 (2024-08-12)
 
 ### Added
 
  - Implemented the `IterStruct` derive macro and support library.
-
-### Commit Statistics
-
-<csr-read-only-do-not-edit/>
-
- - 5 commits contributed to the release.
- - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
- - 0 issues like '(#ID)' were seen in commit messages
 
 ### Commit Details
 
@@ -32,4 +41,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Implements the macro, adds examples and tests. ([`46fe4e8`](https://github.com/tommie/incrstruct/commit/46fe4e8b64771008ff9c314666678b453bb8c5d9))
     - Initial test. ([`777daf3`](https://github.com/tommie/incrstruct/commit/777daf3de5fe75d744533ba3304960018657df14))
 </details>
-
