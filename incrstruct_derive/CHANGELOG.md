@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.1.3 (2024-08-13)
 
 ### Fixed
 
@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Updates changelogs. ([`9e9c86c`](https://github.com/tommie/incrstruct/commit/9e9c86c7bd7ce29e34be362a22a0a4a181f41132))
     - Fixes head fields memory leak on initialization error in new_box and new_rc. ([`ece3afa`](https://github.com/tommie/incrstruct/commit/ece3afa0c2660183443532c111a5f89cd55800c7))
 </details>
 
@@ -81,3 +82,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Re-exports the macro. ([`792b0b5`](https://github.com/tommie/incrstruct/commit/792b0b5f6be290811b3c81f5df84f84bd042c91f))
     - Implements the macro, adds examples and tests. ([`46fe4e8`](https://github.com/tommie/incrstruct/commit/46fe4e8b64771008ff9c314666678b453bb8c5d9))
 </details>
+

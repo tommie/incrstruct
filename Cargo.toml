@@ -12,7 +12,7 @@ readme = "README.md"
 [package]
 name = "incrstruct"
 description = "Build self-referencing structs using two-phase initialization"
-version= "0.1.1"
+version= "0.1.2"
 edition.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -20,4 +20,4 @@ license.workspace = true
 readme.workspace = true
 
 [dependencies]
-incrstruct_derive = { version = "^0.1.2", path = "incrstruct_derive" }
+incrstruct_derive = { version = "^0.1.3", path = "incrstruct_derive" }
