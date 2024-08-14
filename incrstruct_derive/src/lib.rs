@@ -122,7 +122,7 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
         quote! {
             pub fn #name(#(#head_params),*) -> #ret_type {
                 // SAFETY: the callee is aware the struct is partially initialized.
-                incrstruct::#name(unsafe { Self::new_uninit(#(#head_args),*) }) #init_unwrap
+                incrstruct::internal::#name(unsafe { Self::new_uninit(#(#head_args),*) }) #init_unwrap
             }
         }
     })
@@ -166,27 +166,27 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
             #(#new_funcs)*
 
             pub fn force_init(this: &mut Self) -> #force_init_type {
-                incrstruct::force_init(this) #init_unwrap
+                incrstruct::internal::force_init(this) #init_unwrap
             }
 
-            /// See [incrstruct::new_uninit].
+            /// See [incrstruct::internal::new_uninit].
             pub unsafe fn new_uninit(#(#head_params),*) -> core::mem::MaybeUninit<Self> {
                 // SAFETY: we only write each field once, so this
                 // overwrites uninitialized values.
-                incrstruct::new_uninit::<Self, _>(|out| unsafe {
+                incrstruct::internal::new_uninit::<Self, _>(|out| unsafe {
                     #(
                         core::ptr::write(&mut out.#head_args, #head_args);
                     )*
                 })
             }
 
-            /// See [incrstruct::drop_uninit_in_place].
+            /// See [incrstruct::internal::drop_uninit_in_place].
             pub unsafe fn drop_uninit(mut this: core::mem::MaybeUninit<Self>) {
-                <Self as incrstruct::IncrStructInit>::drop_uninit_in_place(&mut this)
+                <Self as incrstruct::internal::IncrStructInit>::drop_uninit_in_place(&mut this)
             }
 
             pub unsafe fn ensure_init(this: &mut core::mem::MaybeUninit<Self>) -> #ensure_init_type {
-                incrstruct::ensure_init(this) #init_unwrap
+                incrstruct::internal::ensure_init(this) #init_unwrap
             }
         }
 
@@ -196,7 +196,7 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
             )*
         }
 
-        impl #generics_decls incrstruct::IncrStructInit for #struct_name #generics_args #generics_where {
+        impl #generics_decls incrstruct::internal::IncrStructInit for #struct_name #generics_args #generics_where {
             type Error = #init_err_or_unit;
 
             // SAFETY: since we only support referencing earlier
@@ -214,7 +214,7 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
             /// Drops a value previously created with `new_uninit`.
             unsafe fn drop_uninit_in_place(this: &mut core::mem::MaybeUninit<Self>) {
                 // SAFETY: we only drop head fields, and only once.
-                incrstruct::drop_uninit_in_place(this, |this| unsafe {
+                incrstruct::internal::drop_uninit_in_place(this, |this| unsafe {
                     #(
                         core::ptr::drop_in_place(&mut this.#drop_head_names);
                     )*
