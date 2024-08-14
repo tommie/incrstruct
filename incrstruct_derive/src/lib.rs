@@ -104,8 +104,14 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
         None => quote! { .unwrap() },
     };
     let new_funcs: Vec<proc_macro2::TokenStream> = [
-        (quote! { new_box }, quote! { std::boxed::Box<Self> }),
-        (quote! { new_rc }, quote! { std::rc::Rc<Self> }),
+        (
+            quote! { new_box },
+            quote! { core::pin::Pin<std::boxed::Box<Self>> },
+        ),
+        (
+            quote! { new_rc },
+            quote! { core::pin::Pin<std::rc::Rc<Self>> },
+        ),
     ]
     .map(|(name, ty)| {
         let ret_type = match &init_err {
@@ -159,6 +165,10 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
         impl #generics_decls #struct_name #generics_args #generics_where {
             #(#new_funcs)*
 
+            pub fn force_init(this: &mut Self) -> #force_init_type {
+                incrstruct::force_init(this) #init_unwrap
+            }
+
             /// See [incrstruct::new_uninit].
             pub unsafe fn new_uninit(#(#head_params),*) -> core::mem::MaybeUninit<Self> {
                 // SAFETY: we only write each field once, so this
@@ -171,16 +181,12 @@ fn incr_struct(input: &DeriveInput) -> Result<TokenStream, Error> {
             }
 
             /// See [incrstruct::drop_uninit_in_place].
-            unsafe fn drop_uninit(mut this: core::mem::MaybeUninit<Self>) {
+            pub unsafe fn drop_uninit(mut this: core::mem::MaybeUninit<Self>) {
                 <Self as incrstruct::IncrStructInit>::drop_uninit_in_place(&mut this)
             }
 
-            fn ensure_init(this: &mut core::mem::MaybeUninit<Self>) -> #ensure_init_type {
+            pub unsafe fn ensure_init(this: &mut core::mem::MaybeUninit<Self>) -> #ensure_init_type {
                 incrstruct::ensure_init(this) #init_unwrap
-            }
-
-            fn force_init(this: &mut Self) -> #force_init_type {
-                incrstruct::force_init(this) #init_unwrap
             }
         }
 

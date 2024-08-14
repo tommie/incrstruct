@@ -1,4 +1,5 @@
 use core::cell::{Ref, RefCell};
+use core::pin::Pin;
 use core::ptr::drop_in_place;
 
 #[cfg(test)]
@@ -33,7 +34,7 @@ mod simple {
     #[test]
     fn new_uninit_works() {
         let mut a = unsafe { AStruct::new_uninit(4711, RefCell::new(42)) };
-        let aref = AStruct::ensure_init(&mut a);
+        let aref = unsafe { AStruct::ensure_init(&mut a) };
 
         assert_eq!(*aref.head1.borrow(), 42);
         assert_eq!(*aref.b, 42);
@@ -72,7 +73,8 @@ mod simple {
     #[test]
     fn force_init_works() {
         let a = AStruct::new_box(4711, RefCell::new(42));
-        let mut b = *a;
+        let mut b = *unsafe { Pin::into_inner_unchecked(a) };
+        let _bpin = unsafe { Pin::new_unchecked(&mut b) };
 
         AStruct::force_init(&mut b);
 
@@ -126,7 +128,7 @@ mod init_err {
     #[test]
     fn new_uninit_works() {
         let mut a = unsafe { AStruct::new_uninit(4711, RefCell::new(42)) };
-        let aref = AStruct::ensure_init(&mut a).unwrap();
+        let aref = unsafe { AStruct::ensure_init(&mut a).unwrap() };
 
         assert_eq!(*aref.head1.borrow(), 42);
         assert_eq!(*aref.b, 42);
@@ -165,7 +167,8 @@ mod init_err {
     #[test]
     fn force_init_works() {
         let a = AStruct::new_box(4711, RefCell::new(42)).unwrap();
-        let mut b = *a;
+        let mut b = *unsafe { Pin::into_inner_unchecked(a) };
+        let _bpin = unsafe { Pin::new_unchecked(&mut b) };
 
         AStruct::force_init(&mut b).unwrap();
 
@@ -185,7 +188,8 @@ mod init_err {
     #[test]
     fn second_force_init_fails_gracefully() {
         let a = AStruct::new_box(4711, RefCell::new(42)).unwrap();
-        let mut b = *a;
+        let mut b = *unsafe { Pin::into_inner_unchecked(a) };
+        let _bpin = unsafe { Pin::new_unchecked(&mut b) };
 
         AStruct::force_init(&mut b).unwrap();
 

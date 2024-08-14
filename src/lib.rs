@@ -17,7 +17,7 @@
 //! - Since a move in Rust doesn't trigger any code, any value move
 //!   will make the self-referencing struct invalid. E.g. if you use
 //!   these structs directly in a `Vec`, which later has to reallocate
-//!   to grow. As long as you use `Vec<Box<MyStruct>>`, like what the
+//!   to grow. As long as you use `Vec<Pin<Box<MyStruct>>>`, like what the
 //!   high-level API provides with e.g. [new_box], it is safe.
 //!    - We could provide a special `Vec` (and other in-line containers)
 //!      that runs [force_init]. It could be eager or lazy, though the
@@ -124,12 +124,14 @@
 //! assert_eq!(*my_rc.a.borrow(), *my_rc.b);
 //! ```
 //!
-//! These are generally safe, since you rarely move values out of
-//! them. If you do move the value, the self-references will still be
-//! pointing to the old place, so you need to run
-//! `incrstruct::force_init`:
+//! These are safe, since they return a
+//! [`Pin<>`](https://doc.rust-lang.org/std/pin/struct.Pin.html), and
+//! thus the value cannot be moved. If you do move the value (using
+//! unsafe code,) the self-references will still be pointing to the
+//! old place, so you need to run `incrstruct::force_init`:
 //!
 //! ```rust
+//! use core::pin::Pin;
 //! # use std::cell::{Ref, RefCell};
 //! # use std::rc::Rc;
 //! # use incrstruct::IncrStruct;
@@ -146,8 +148,9 @@
 //! #         a.borrow()
 //! #     }
 //! # }
+//!
 //! let my_rc = AStruct::new_rc(RefCell::new(42));
-//! let mut taken_value = Rc::into_inner(my_rc).unwrap();
+//! let mut taken_value = Rc::into_inner(unsafe { Pin::into_inner_unchecked(my_rc) }).unwrap();
 //!
 //! //assert_eq!(*taken_value.a.borrow(), *taken_value.b);  // UNSOUND!
 //!
@@ -158,9 +161,11 @@
 //!
 //! If you really want to make a mess, you can use the low-level API,
 //! which gives you control over each initialization phase
-//! separately. This is useful e.g. in creating `Rc<RefCell<AStruct>>`
-//! or other wrappers that aren't supported directly. Take a look at
-//! the [new_box] function.
+//! separately. This is useful e.g. in creating
+//! `Pin<Rc<RefCell<AStruct>>>` or other wrappers that aren't
+//! supported directly. Take a look at the [new_box] function. Note
+//! that you must always use `Pin<>` to wrap your smart pointer,
+//! ensuring the value cannot be moved by Rust.
 //!
 //! # Handling Failures
 //!
@@ -172,8 +177,8 @@
 //! generated functions on your struct to return a corresponding
 //! `Result`:
 //!
-//! - `new_box -> Result<Box<AStruct>, AnError>`
-//! - `new_rc -> Result<Rc<AStruct>, AnError>`
+//! - `new_box -> Result<Pin<Box<AStruct>>, AnError>`
+//! - `new_rc -> Result<Pin<Rc<AStruct>>, AnError>`
 //! - `ensure_init -> Result<&mut AStruct, AnError>`
 //! - `force_init -> Result<(), AnError>`
 //!
@@ -247,9 +252,9 @@
 //! }
 //!
 //! impl<'b, T: Debug> AStructInit<'b, T> for AStruct<'b, T> {
-//!    fn init_field_b(a: &'b RefCell<T>) -> Ref<'b, T> {
+//!     fn init_field_b(a: &'b RefCell<T>) -> Ref<'b, T> {
 //!         a.borrow()
-//!    }
+//!     }
 //! }
 //!
 //! let my_box = AStruct::new_box(RefCell::new(42));
@@ -311,7 +316,7 @@
 //! `init` function keeps track of which field it is initializing, and
 //! calls the generated `drop_tail_in_place` for the previous
 //! ones. There is no concept of partially initialized tail fields;
-//! it's all or nothing.
+//! it's all or nothing after the second phase returns.
 //!
 //! A generated associated function called `AStruct::drop_uninit` must
 //! be used to drop the `MaybeUninit<AStruct>` if the second phase
@@ -346,17 +351,18 @@
 //! * [x] Generics shouldn't be a problem.
 //! * [x] Enforce sound ordering of fields so that the natural drop order
 //!       makes sense w.r.t. dependencies.
+//! * [x] Moving an initialized struct is impossible. Moving partially
+//!       initialized structs works.
 //! * [ ] Since `&mut` is exclusive, it would be ideal if self-referential
 //!       structs could only grab immutable references. (Since a single
 //!       `&mut self` would imply that nothing else in the program can
 //!       grab a reference. If, additionally, external users of the struct
 //!       were unable to acquire a `&mut`, there would be no changes to
 //!       Rust borrow semantics.
-//! * [ ] Moving an initialized struct is impossible. Moving partially
-//!       initialized structs works.
 
 use core::marker::PhantomPinned;
 use core::mem::MaybeUninit;
+use core::pin::Pin;
 use core::ptr::drop_in_place;
 use std::rc::Rc;
 
@@ -364,8 +370,19 @@ pub use incrstruct_derive::IncrStruct;
 
 #[derive(Clone, Debug)]
 pub enum Header {
+    // All head fields are initialized, and no tail fields are. The
+    // struct is wrapped in `MaybeUninit<>` and `drop_uninit` must be
+    // called manually to drop head fields.
     Uninited,
+
+    // All head fields are initialized, and some tail fields may be
+    // initialized. This is used to check for undue recursive calls to
+    // `ensure_init`.
     Initing,
+
+    // All fields are initialized, and the struct is not allowed to
+    // move. (Where in the enum the `PhantomPinned` is located doesn't
+    // matter, but it only matters for this variant.)
     Inited(PhantomPinned),
 }
 
@@ -401,15 +418,16 @@ pub trait IncrStructInit: Sized {
 /// `T::new_uninit`.
 ///
 /// Used by auto-generated code.
-pub fn new_box<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Box<T>, T::Error> {
-    let bx = Box::new(v);
-    let raw = Box::into_raw(bx);
+pub fn new_box<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Pin<Box<T>>, T::Error> {
+    let raw = Box::into_raw(Box::new(v));
+    // SAFETY: we keep a pin until the Box is reassembled.
+    let _pinned_raw = unsafe { Pin::new_unchecked(&mut *raw) };
 
     // SAFETY: we have taken ownership of the pointer to uninitialized Box data.
-    match ensure_init(unsafe { &mut *raw }) {
+    match unsafe { ensure_init(&mut *raw) } {
         Ok(ptr) => {
             // SAFETY: the data is fully initialized, and Box can take ownership.
-            Ok(unsafe { Box::from_raw(ptr as *mut _) })
+            Ok(unsafe { Pin::new_unchecked(Box::from_raw(ptr as *mut _)) })
         }
         Err(err) => {
             // SAFETY: only head data is initialized.
@@ -427,15 +445,16 @@ pub fn new_box<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Box<T>, T::Error>
 /// `T::new_uninit`.
 ///
 /// Used by auto-generated code.
-pub fn new_rc<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Rc<T>, T::Error> {
-    let rc = Rc::new(v);
-    let raw = Rc::into_raw(rc) as *mut _;
+pub fn new_rc<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Pin<Rc<T>>, T::Error> {
+    let raw = Rc::into_raw(Rc::new(v)) as *mut _;
+    // SAFETY: we keep a pin until the Rc is reassembled.
+    let _pinned_raw = unsafe { Pin::new_unchecked(&mut *raw) };
 
     // SAFETY: we have taken ownership of the pointer to uninitialized Box data.
-    match ensure_init(unsafe { &mut *raw }) {
+    match unsafe { ensure_init(&mut *raw) } {
         Ok(ptr) => {
             // SAFETY: the data is fully initialized, and Box can take ownership.
-            Ok(unsafe { Rc::from_raw(ptr as *mut _) })
+            Ok(unsafe { Pin::new_unchecked(Rc::from_raw(ptr as *mut _)) })
         }
         Err(err) => {
             // SAFETY: only head data is initialized.
@@ -446,6 +465,33 @@ pub fn new_rc<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Rc<T>, T::Error> {
             Err(err)
         }
     }
+}
+
+/// Forces initialization of `this`, even if it was previously initialized.
+///
+/// This is useful when a T has moved, and the self-referencing tail
+/// fields must be synchronized.
+///
+/// The caller is reponsible for keeping `this` pinned.
+///
+/// # Safety
+///
+/// This function is always safe to call, but only makes sense to call
+/// after you have used an unsafe function to move a pinned value
+/// somewhere else.
+pub fn force_init<T: IncrStructInit>(this: &mut T) -> Result<(), T::Error> {
+    match <T as IncrStructInit>::header(this) {
+        Header::Uninited => {}
+        // SAFETY: we are now making `this` back into a partially
+        // initialized struct, the same as Uninited.
+        Header::Inited(_) => unsafe {
+            T::drop_tail_in_place(this, 0);
+        },
+        Header::Initing => panic!("Recursive call to force_init"),
+    };
+
+    // SAFETY: tail fields are uninitialized.
+    unsafe { do_init(this) }
 }
 
 /// Creates a partially initialized struct. The `f` function
@@ -462,9 +508,8 @@ pub fn new_rc<T: IncrStructInit>(v: MaybeUninit<T>) -> Result<Rc<T>, T::Error> {
 pub unsafe fn new_uninit<T: IncrStructInit, F: FnOnce(&mut T)>(f: F) -> MaybeUninit<T> {
     let mut out = MaybeUninit::<T>::uninit();
 
-    // SAFETY: we just created the uninitialized value.
-    let this = unsafe { &mut *out.as_mut_ptr() };
-    unsafe { core::ptr::write(<T as IncrStructInit>::header(this), Header::Uninited) };
+    let this = &mut *out.as_mut_ptr();
+    core::ptr::write(<T as IncrStructInit>::header(this), Header::Uninited);
 
     f(this);
 
@@ -479,18 +524,25 @@ pub unsafe fn new_uninit<T: IncrStructInit, F: FnOnce(&mut T)>(f: F) -> MaybeUni
 /// function returns. Thus, it's safe to call `ensure_init` again. The
 /// caller is responsible for calling `drop_uninit` if required.
 ///
+/// The caller is responsible for pinning `this`.
+///
 /// Used by auto-generated code.
-pub fn ensure_init<T: IncrStructInit>(this: &mut MaybeUninit<T>) -> Result<&mut T, T::Error> {
-    // SAFETY: we have exclusive access to `this`.
-    let r = unsafe { &mut *this.as_mut_ptr() };
+///
+/// # Safety
+///
+/// This function assumes head fields are initialized and that tail
+/// fields are not .
+pub unsafe fn ensure_init<T: IncrStructInit>(
+    this: &mut MaybeUninit<T>,
+) -> Result<&mut T, T::Error> {
+    let r = &mut *this.as_mut_ptr();
 
     match <T as IncrStructInit>::header(r) {
-        Header::Inited(_) => {}
-        _ => force_init(r)?,
+        Header::Uninited => do_init(r)?,
+        _ => panic!("ensure_init called on already initialized struct"),
     };
 
-    // SAFETY: all fields have been initialized.
-    Ok(unsafe { this.assume_init_mut() })
+    Ok(this.assume_init_mut())
 }
 
 /// Drops a partially initialized struct. Tail fields are assumed to
@@ -498,6 +550,11 @@ pub fn ensure_init<T: IncrStructInit>(this: &mut MaybeUninit<T>) -> Result<&mut 
 /// initialized.
 ///
 /// Used by auto-generated code.
+///
+/// # Safety
+///
+/// It only drops head fields. This function panics if the struct is
+/// not `Uninited`.
 pub unsafe fn drop_uninit_in_place<T: IncrStructInit, F: FnOnce(&mut T)>(
     this: &mut MaybeUninit<T>,
     f: F,
@@ -515,21 +572,10 @@ pub unsafe fn drop_uninit_in_place<T: IncrStructInit, F: FnOnce(&mut T)>(
     }
 }
 
-/// Forces initialization of `this`, even if it was previously initialized.
+/// Performs initialization of tail fields, without sanity checking.
 ///
-/// This is useful when a T has moved, and the self-referencing tail
-/// fields must be synchronized.
-pub fn force_init<T: IncrStructInit>(this: &mut T) -> Result<(), T::Error> {
-    match <T as IncrStructInit>::header(this) {
-        Header::Uninited => {}
-        // SAFETY: we are now making `this` back into a partially
-        // initialized struct, the same as Uninited.
-        Header::Inited(_) => unsafe {
-            T::drop_tail_in_place(this, 0);
-        },
-        Header::Initing => panic!("Recursive call to force_init"),
-    };
-
+/// See [ensure_init] and [force_init].
+unsafe fn do_init<T: IncrStructInit>(this: &mut T) -> Result<(), T::Error> {
     *<T as IncrStructInit>::header(this) = Header::Initing;
 
     // If we panic in the middle of init(), data will
@@ -543,7 +589,7 @@ pub fn force_init<T: IncrStructInit>(this: &mut T) -> Result<(), T::Error> {
     // SAFETY: the code above has made the struct partially
     // initialized.
 
-    match unsafe { T::init(this) } {
+    match T::init(this) {
         Ok(_) => {
             *<T as IncrStructInit>::header(this) = Header::Inited(PhantomPinned);
 
